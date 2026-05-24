@@ -610,7 +610,7 @@ function getBookedDays() {
     const from = new Date(b.from + 'T00:00:00');
     const to   = new Date(b.to   + 'T00:00:00');
     for (let d = new Date(from); d <= to; d.setDate(d.getDate()+1)) {
-      const key = d.toISOString().slice(0,10);
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
       if (b.status === 'confirmed') confirmed.add(key);
       else pending.add(key);
     }
@@ -622,7 +622,7 @@ function renderCalendar() {
   const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   document.getElementById('cal-month-label').textContent = months[calMonth] + ' ' + calYear;
   const { confirmed, pending } = getBookedDays();
-  const today = new Date().toISOString().slice(0,10);
+  const _t = new Date(); const today = `${_t.getFullYear()}-${String(_t.getMonth()+1).padStart(2,'0')}-${String(_t.getDate()).padStart(2,'0')}`;
   const grid = document.getElementById('cal-grid');
   const days = ['Mo','Tu','We','Th','Fr','Sa','Su'];
   let html = days.map(d => `<div class="cal-day-label">${d}</div>`).join('');
@@ -664,7 +664,7 @@ function formatDateRange(from, to) {
 }
 
 function renderUpcoming() {
-  const today = new Date().toISOString().slice(0,10);
+  const _t = new Date(); const today = `${_t.getFullYear()}-${String(_t.getMonth()+1).padStart(2,'0')}-${String(_t.getDate()).padStart(2,'0')}`;
   const bookings = allBookings.filter(b => b.status !== 'denied' && b.to >= today);
   bookings.sort((a,b) => a.from.localeCompare(b.from));
   const el = document.getElementById('upcoming-list');
