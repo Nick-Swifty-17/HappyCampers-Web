@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Family Campervan</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;1,9..144,300&family=DM+Sans:wght@400;500&display=swap" rel="stylesheet">
+
+<!-- Firebase SDK -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
+  import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, addDoc, updateDoc, deleteDoc, query, orderBy } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
+
+  // ── YOUR FIREBASE CONFIG ──
+  const firebaseConfig = {
+    apiKey: "AIzaSyB5TXEZrnBQL-RFFtnaADD7haleR2L2h6w",
+    authDomain: "happycamper-24b99.firebaseapp.com",
+    projectId: "happycamper-24b99",
+    storageBucket: "happycamper-24b99.firebasestorage.app",
+    messagingSenderId: "342605267632",
+    appId: "1:342605267632:web:b3c1d89e7967e32600f175"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  // ── DB REFERENCES ──
+  const settingsRef = doc(db, 'app', 'settings');
+  const usersRef    = doc(db, 'app', 'users');
+  const bookingsCol = collection(db, 'bookings');
+
+  // ── DEFAULTS ──
+  async function ensureDefaults() {
+    const snap = await getDoc(settingsRef);
+    if (!snap.exists()) {
+      await setDoc(settingsRef, { passphrase: 'CamperBooking', adminPw: 'CamperAdmin' });
+    }
+    const usnap = await getDoc(usersRef);
+    if (!usnap.exists()) {
+      await setDoc(usersRef, { list: [] });
+    }
+  }
+
+  // ── SETTINGS HELPERS ──
+  async function getSettings() {
+    const snap = await getDoc(settingsRef);
+    return snap.exists() ? snap.data() : { passphrase: 'CamperBooking', adminPw: 'CamperAdmin' };
+  }
+  async function saveSettings(data) {
+    await setDoc(settingsRef, data, { merge: true });
+  }
+
+  // ── USERS HELPERS ──
+  async function getUsers() {
+    const snap = await getDoc(usersRef);
+    return snap.exists() ? (snap.data().list || []) : [];
+  }
+  async function saveUsers(list) {
+    await setDoc(usersRef, { list });
+  }
+
+  // ── BOOKINGS HELPERS ──
+  async function addBooking(data) {
+    await addDoc(bookingsCol, { ...data, created: Date.now() });
+  }
+  async function updateBooking(id, data) {
+    await updateDoc(doc(db, 'bookings', id), data);
+  }
+  async function deleteBooking(id) {
+    await deleteDoc(doc(db, 'bookings', id));
+  }
+
+  // ── EXPOSE TO WINDOW ──
+  window.fb = { getSettings, saveSettings, getUsers, saveUsers, addBooking, updateBooking, deleteBooking, bookingsCol, query, orderBy, onSnapshot };
+  window.dispatchEvent(new Event('fb-ready'));
+</script>
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --green: #2D6A4F; --green-light: #52B788; --green-pale: #D8F3DC;
+    --amber: #E9AB22; --amber-pale: #FEF3C7;
+    --red: #C0392B; --red-pale: #FDECEA;
+    --ink: #1A1A2E; --ink-soft: #4A4A6A; --ink-muted: #8888AA;
+    --surface: #FAFAF8; --card: #FFFFFF;
+    --border: rgba(26,26,46,0.10); --border-strong: rgba(26,26,46,0.18);
+    --radius: 12px; --radius-sm: 8px;
+  }
+  body { font-family: 'DM Sans', sans-serif; background: var(--surface); color: var(--ink); min-height: 100vh; font-size: 15px; }
+
+  .screen { display: none; min-height: 100vh; }
+  .screen.active { display: flex; flex-direction: column; }
+
+  /* LOADING */
+  #screen-loading { align-items: center; justify-content: center; background: var(--ink); }
+  .loading-van { font-size: 48px; animation: bounce 1s infinite alternate; }
+  @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-12px); } }
+  .loading-text { color: var(--ink-muted); font-size: 14px; margin-top: 16px; }
+
+  /* LOCK */
+  #screen-lock { align-items: center; justify-content: center; background: var(--ink); padding: 2rem; }
+  .lock-box { width: 100%; max-width: 380px; text-align: center; }
+  .lock-van { font-size: 56px; margin-bottom: 1.5rem; display: block; }
+  .lock-title { font-family: 'Fraunces', serif; font-size: 32px; font-weight: 300; color: #fff; margin-bottom: 0.5rem; letter-spacing: -0.5px; }
+  .lock-sub { color: var(--ink-muted); font-size: 14px; margin-bottom: 2.5rem; }
+  .lock-input { width: 100%; padding: 14px 18px; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.15); border-radius: var(--radius); color: #fff; font-size: 16px; font-family: 'DM Sans', sans-serif; text-align: center; letter-spacing: 2px; outline: none; margin-bottom: 12px; transition: border-color 0.2s; }
+  .lock-input::placeholder { letter-spacing: 0; color: rgba(255,255,255,0.3); }
+  .lock-input:focus { border-color: var(--green-light); }
+  .lock-btn { width: 100%; padding: 14px; background: var(--green-light); border: none; border-radius: var(--radius); color: #fff; font-size: 15px; font-weight: 500; font-family: 'DM Sans', sans-serif; cursor: pointer; transition: opacity 0.2s; margin-bottom: 16px; }
+  .lock-btn:hover { opacity: 0.88; }
+  .lock-admin-link { color: var(--ink-muted); font-size: 13px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; background: none; border: none; font-family: 'DM Sans', sans-serif; }
+  .lock-admin-link:hover { color: #fff; }
+  .lock-error { color: #FC8181; font-size: 13px; margin-bottom: 12px; min-height: 20px; }
+
+  /* ADMIN LOGIN */
+  #screen-admin-login { align-items: center; justify-content: center; background: var(--ink); padding: 2rem; }
+  .admin-login-box { width: 100%; max-width: 380px; }
+  .back-btn { color: var(--ink-muted); font-size: 13px; cursor: pointer; background: none; border: none; font-family: 'DM Sans', sans-serif; margin-bottom: 2rem; display: flex; align-items: center; gap: 6px; }
+  .back-btn:hover { color: #fff; }
+  .admin-login-title { font-family: 'Fraunces', serif; font-size: 26px; font-weight: 300; color: #fff; margin-bottom: 0.4rem; }
+  .admin-login-sub { color: var(--ink-muted); font-size: 14px; margin-bottom: 2rem; }
+
+  /* APP SHELL */
+  #screen-app { flex-direction: column; background: var(--surface); }
+  .app-header { background: var(--ink); color: #fff; padding: 0 20px; display: flex; align-items: center; justify-content: space-between; height: 56px; flex-shrink: 0; }
+  .app-header-left { display: flex; align-items: center; gap: 10px; }
+  .app-logo { font-size: 22px; }
+  .app-title { font-family: 'Fraunces', serif; font-size: 18px; font-weight: 300; letter-spacing: -0.3px; }
+  .app-user-pill { background: rgba(255,255,255,0.1); border-radius: 20px; padding: 5px 12px; font-size: 13px; color: rgba(255,255,255,0.8); display: flex; align-items: center; gap: 8px; }
+  .logout-btn { background: none; border: none; color: rgba(255,255,255,0.5); cursor: pointer; font-size: 13px; font-family: 'DM Sans', sans-serif; }
+  .logout-btn:hover { color: #fff; }
+  .app-nav { background: var(--card); border-bottom: 1px solid var(--border); display: flex; overflow-x: auto; flex-shrink: 0; }
+  .nav-tab { padding: 14px 20px; font-size: 13px; color: var(--ink-muted); cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; font-weight: 500; transition: color 0.15s; }
+  .nav-tab:hover { color: var(--ink); }
+  .nav-tab.active { color: var(--green); border-bottom-color: var(--green); }
+  .nav-tab .badge { display: inline-block; background: var(--red); color: #fff; border-radius: 10px; font-size: 10px; padding: 1px 6px; margin-left: 5px; font-weight: 500; }
+  .app-content { flex: 1; overflow-y: auto; padding: 20px; max-width: 720px; width: 100%; margin: 0 auto; }
+
+  /* ADMIN SCREEN */
+  #screen-admin { flex-direction: column; background: var(--surface); }
+  .admin-header { background: #16213E; color: #fff; padding: 0 20px; display: flex; align-items: center; justify-content: space-between; height: 56px; }
+  .admin-header-title { font-family: 'Fraunces', serif; font-size: 18px; font-weight: 300; }
+  .admin-badge { background: var(--amber); color: var(--ink); font-size: 11px; font-weight: 500; padding: 3px 9px; border-radius: 20px; }
+  .admin-nav { background: #16213E; border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; }
+  .admin-tab { padding: 12px 20px; font-size: 13px; color: rgba(255,255,255,0.5); cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; font-weight: 500; }
+  .admin-tab.active { color: var(--amber); border-bottom-color: var(--amber); }
+  .admin-content { flex: 1; overflow-y: auto; padding: 20px; max-width: 720px; width: 100%; margin: 0 auto; }
+
+  /* SHARED */
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+  .card-title { font-family: 'Fraunces', serif; font-size: 18px; font-weight: 300; margin-bottom: 16px; color: var(--ink); }
+  .section-label { font-size: 11px; font-weight: 500; color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; }
+
+  /* CALENDAR */
+  .cal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .cal-month { font-family: 'Fraunces', serif; font-size: 20px; font-weight: 300; }
+  .cal-nav-btn { background: none; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); width: 32px; height: 32px; cursor: pointer; font-size: 16px; color: var(--ink-soft); display: flex; align-items: center; justify-content: center; }
+  .cal-nav-btn:hover { background: var(--surface); }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+  .cal-day-label { text-align: center; font-size: 11px; font-weight: 500; color: var(--ink-muted); padding: 6px 0; text-transform: uppercase; letter-spacing: 0.05em; }
+  .cal-day { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; font-size: 13px; border-radius: 6px; }
+  .cal-day.confirmed { background: var(--green-pale); color: var(--green); font-weight: 500; }
+  .cal-day.pending { background: var(--amber-pale); color: #92600A; font-weight: 500; }
+  .cal-day.today { box-shadow: inset 0 0 0 1.5px var(--green); }
+  .legend { display: flex; gap: 16px; margin-top: 14px; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-soft); }
+  .legend-dot { width: 12px; height: 12px; border-radius: 3px; }
+
+  /* BOOKING CARDS */
+  .booking-item { display: flex; align-items: flex-start; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .booking-item:last-child { border-bottom: none; padding-bottom: 0; }
+  .booking-item:first-child { padding-top: 0; }
+  .avatar { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 500; flex-shrink: 0; }
+  .booking-info { flex: 1; min-width: 0; }
+  .booking-name { font-weight: 500; font-size: 14px; margin-bottom: 2px; }
+  .booking-dates { font-size: 12px; color: var(--ink-muted); }
+  .booking-note { font-size: 12px; color: var(--ink-soft); font-style: italic; margin-top: 3px; }
+  .status-badge { font-size: 11px; font-weight: 500; padding: 3px 10px; border-radius: 20px; flex-shrink: 0; }
+  .status-confirmed { background: var(--green-pale); color: var(--green); }
+  .status-pending { background: var(--amber-pale); color: #92600A; }
+  .status-denied { background: var(--red-pale); color: var(--red); }
+  .approve-btns { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .btn-approve { font-size: 12px; padding: 5px 12px; border-radius: var(--radius-sm); border: 1px solid var(--green-light); background: var(--green-pale); color: var(--green); cursor: pointer; font-family: 'DM Sans', sans-serif; font-weight: 500; }
+  .btn-deny { font-size: 12px; padding: 5px 12px; border-radius: var(--radius-sm); border: 1px solid #FCA5A5; background: var(--red-pale); color: var(--red); cursor: pointer; font-family: 'DM Sans', sans-serif; font-weight: 500; }
+
+  /* FORM */
+  .form-group { margin-bottom: 14px; }
+  .form-label { font-size: 12px; font-weight: 500; color: var(--ink-soft); margin-bottom: 5px; display: block; }
+  .form-control { width: 100%; padding: 10px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); font-size: 14px; font-family: 'DM Sans', sans-serif; color: var(--ink); background: var(--card); outline: none; transition: border-color 0.2s; }
+  .form-control:focus { border-color: var(--green-light); }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .btn-primary { width: 100%; padding: 12px; background: var(--green); border: none; border-radius: var(--radius-sm); color: #fff; font-size: 14px; font-weight: 500; font-family: 'DM Sans', sans-serif; cursor: pointer; transition: opacity 0.2s; margin-top: 4px; }
+  .btn-primary:hover { opacity: 0.88; }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-secondary { padding: 9px 16px; background: none; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); color: var(--ink-soft); font-size: 13px; font-weight: 500; font-family: 'DM Sans', sans-serif; cursor: pointer; }
+  .btn-secondary:hover { background: var(--surface); }
+  .btn-danger { padding: 7px 12px; background: none; border: 1px solid #FCA5A5; border-radius: var(--radius-sm); color: var(--red); font-size: 12px; font-family: 'DM Sans', sans-serif; cursor: pointer; }
+
+  /* USER MANAGEMENT */
+  .user-row { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+  .user-row:last-child { border-bottom: none; }
+  .user-info { flex: 1; }
+  .user-name { font-weight: 500; font-size: 14px; }
+  .user-role { font-size: 12px; color: var(--ink-muted); margin-top: 1px; }
+  .role-toggle { font-size: 12px; padding: 5px 10px; border-radius: 20px; cursor: pointer; font-family: 'DM Sans', sans-serif; font-weight: 500; border: 1px solid; }
+  .role-approver { background: var(--amber-pale); color: #92600A; border-color: #F6C94E; }
+  .role-member { background: var(--surface); color: var(--ink-muted); border-color: var(--border-strong); }
+
+  /* SETTINGS */
+  .setting-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid var(--border); gap: 16px; }
+  .setting-row:last-child { border-bottom: none; }
+  .setting-label { font-weight: 500; font-size: 14px; }
+  .setting-desc { font-size: 12px; color: var(--ink-muted); margin-top: 2px; }
+
+  /* EMPTY STATE */
+  .empty-state { text-align: center; padding: 40px 20px; color: var(--ink-muted); }
+  .empty-icon { font-size: 36px; margin-bottom: 12px; }
+  .empty-text { font-size: 14px; }
+
+  /* CONFLICT WARNING */
+  .conflict-warn { background: var(--red-pale); border: 1px solid #FCA5A5; border-radius: var(--radius-sm); padding: 10px 14px; font-size: 13px; color: var(--red); margin-bottom: 12px; display: none; }
+
+  /* TOAST */
+  #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--ink); color: #fff; padding: 12px 20px; border-radius: var(--radius); font-size: 14px; z-index: 9999; transition: transform 0.3s ease; white-space: nowrap; pointer-events: none; }
+  #toast.show { transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 480px) { .form-row { grid-template-columns: 1fr; } .app-content, .admin-content { padding: 14px; } }
+</style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div id="screen-loading" class="screen active">
+  <div style="text-align:center;">
+    <div class="loading-van">🚐</div>
+    <div class="loading-text">Connecting to the family calendar…</div>
+  </div>
+</div>
+
+<!-- LOCK -->
+<div id="screen-lock" class="screen">
+  <div style="background:var(--ink);flex:1;display:flex;align-items:center;justify-content:center;padding:2rem;">
+    <div class="lock-box">
+      <span class="lock-van">🚐</span>
+      <h1 class="lock-title">Family Campervan</h1>
+      <p class="lock-sub">Enter the family passphrase to continue</p>
+      <p class="lock-error" id="lock-error"></p>
+      <input class="lock-input" id="lock-input" type="password" placeholder="passphrase" autocomplete="off" />
+      <button class="lock-btn" id="lock-submit-btn" onclick="checkPassphrase()">Enter</button>
+      <button class="lock-admin-link" onclick="showScreen('screen-admin-login')">Admin login →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADMIN LOGIN -->
+<div id="screen-admin-login" class="screen">
+  <div style="background:var(--ink);flex:1;display:flex;align-items:center;justify-content:center;padding:2rem;">
+    <div class="admin-login-box">
+      <button class="back-btn" onclick="resetLockBox()">← Back</button>
+      <h2 class="admin-login-title">Admin panel</h2>
+      <p class="admin-login-sub">Enter your admin password to continue</p>
+      <p class="lock-error" id="admin-login-error"></p>
+      <input class="lock-input" id="admin-pw-input" type="password" placeholder="admin password" autocomplete="off" />
+      <button class="lock-btn" onclick="checkAdminPassword()">Enter admin panel</button>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="screen-app" class="screen">
+  <header class="app-header">
+    <div class="app-header-left">
+      <span class="app-logo">🚐</span>
+      <span class="app-title">Family Campervan</span>
+    </div>
+    <div class="app-user-pill">
+      <span id="header-username">Guest</span>
+      <button class="logout-btn" onclick="logout()">Sign out</button>
+    </div>
+  </header>
+  <nav class="app-nav">
+    <div class="nav-tab active" data-tab="calendar" onclick="switchTab('calendar',this)">Calendar</div>
+    <div class="nav-tab" data-tab="bookings" onclick="switchTab('bookings',this)">My bookings</div>
+    <div class="nav-tab" data-tab="approvals" id="tab-approvals" onclick="switchTab('approvals',this)" style="display:none">Approvals <span class="badge" id="approvals-badge" style="display:none">0</span></div>
+    <div class="nav-tab" data-tab="request" onclick="switchTab('request',this)">+ Request</div>
+  </nav>
+  <main class="app-content">
+    <div id="tab-content-calendar">
+      <div class="card">
+        <div class="cal-header">
+          <button class="cal-nav-btn" onclick="changeMonth(-1)">‹</button>
+          <span class="cal-month" id="cal-month-label"></span>
+          <button class="cal-nav-btn" onclick="changeMonth(1)">›</button>
+        </div>
+        <div class="cal-grid" id="cal-grid"></div>
+        <div class="legend">
+          <div class="legend-item"><div class="legend-dot" style="background:var(--green-pale);border:1px solid var(--green-light);"></div> Confirmed</div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--amber-pale);border:1px solid var(--amber);"></div> Pending</div>
+        </div>
+      </div>
+      <div class="card">
+        <p class="section-label">Upcoming bookings</p>
+        <div id="upcoming-list"></div>
+      </div>
+    </div>
+
+    <div id="tab-content-bookings" style="display:none">
+      <div class="card">
+        <p class="section-label">Your bookings</p>
+        <div id="my-bookings-list"></div>
+      </div>
+    </div>
+
+    <div id="tab-content-approvals" style="display:none">
+      <div class="card">
+        <p class="section-label">Pending requests</p>
+        <div id="approvals-list"></div>
+      </div>
+    </div>
+
+    <div id="tab-content-request" style="display:none">
+      <div class="card">
+        <h2 class="card-title">Request dates</h2>
+        <div class="conflict-warn" id="conflict-warn">⚠ These dates overlap with an existing confirmed booking. You can still submit — the approver will see the conflict.</div>
+        <div class="form-group">
+          <label class="form-label">Your name</label>
+          <input class="form-control" id="req-name" type="text" readonly />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">From</label>
+            <input class="form-control" id="req-from" type="date" onchange="checkConflict()" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">To</label>
+            <input class="form-control" id="req-to" type="date" onchange="checkConflict()" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes (optional)</label>
+          <textarea class="form-control" id="req-notes" rows="3" placeholder="e.g. school holidays, special occasion..."></textarea>
+        </div>
+        <p id="req-error" style="color:var(--red);font-size:13px;margin-bottom:10px;min-height:18px;"></p>
+        <button class="btn-primary" id="req-submit-btn" onclick="submitRequest()">Send booking request</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- ADMIN PANEL -->
+<div id="screen-admin" class="screen">
+  <header class="admin-header">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span style="font-size:20px;">🚐</span>
+      <span class="admin-header-title">Admin Panel</span>
+      <span class="admin-badge">Admin</span>
+    </div>
+    <button class="logout-btn" onclick="adminLogout()">Exit admin</button>
+  </header>
+  <nav class="admin-nav">
+    <div class="admin-tab active" onclick="switchAdminTab('users',this)">Users</div>
+    <div class="admin-tab" onclick="switchAdminTab('all-bookings',this)">All bookings</div>
+    <div class="admin-tab" onclick="switchAdminTab('settings',this)">Settings</div>
+  </nav>
+  <div class="admin-content">
+    <div id="admin-tab-users">
+      <div class="card">
+        <h2 class="card-title">Family members</h2>
+        <div id="admin-users-list"></div>
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+          <p class="section-label">Add new member</p>
+          <div class="form-row" style="margin-bottom:10px;">
+            <input class="form-control" id="new-user-name" type="text" placeholder="Name" />
+            <select class="form-control" id="new-user-role">
+              <option value="member">Member</option>
+              <option value="approver">Approver</option>
+            </select>
+          </div>
+          <button class="btn-primary" style="width:auto;padding:10px 20px;" onclick="addUser()">Add member</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="admin-tab-all-bookings" style="display:none">
+      <div class="card">
+        <h2 class="card-title">All bookings</h2>
+        <div id="admin-bookings-list"></div>
+      </div>
+    </div>
+
+    <div id="admin-tab-settings" style="display:none">
+      <div class="card">
+        <h2 class="card-title">Settings</h2>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Family passphrase</div>
+            <div class="setting-desc">All family members use this to access the app</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input class="form-control" id="setting-passphrase" type="password" placeholder="new passphrase" style="width:160px;" />
+            <button class="btn-secondary" onclick="savePassphrase()">Save</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Admin password</div>
+            <div class="setting-desc">Password to access this admin panel</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input class="form-control" id="setting-adminpw" type="password" placeholder="new password" style="width:160px;" />
+            <button class="btn-secondary" onclick="saveAdminPw()">Save</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div>
+            <div class="setting-label">Clear all bookings</div>
+            <div class="setting-desc">Remove all booking data permanently</div>
+          </div>
+          <button class="btn-danger" onclick="clearAllBookings()">Clear bookings</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════
+let currentUser = null;
+let calYear, calMonth;
+let allBookings = [];       // live-synced from Firestore
+let unsubscribeBookings = null;
+
+const AVATARBG   = ['#D8F3DC','#E6F1FB','#FAEEDA','#FBEAF0','#EEEDFE','#F1EFE8'];
+const AVATARTXT  = ['#2D6A4F','#185FA5','#854F0B','#72243E','#3C3489','#444441'];
+
+// ══════════════════════════════════════════
+//  WAIT FOR FIREBASE
+// ══════════════════════════════════════════
+window.addEventListener('fb-ready', async () => {
+  await window.fb.getSettings(); // triggers ensureDefaults via firebase module
+  showScreen('screen-lock');
+});
+
+// ══════════════════════════════════════════
+//  SCREEN MANAGEMENT
+// ══════════════════════════════════════════
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function resetLockBox() {
+  document.getElementById('lock-input').value = '';
+  document.getElementById('lock-error').textContent = '';
+  showScreen('screen-lock');
+}
+
+// ══════════════════════════════════════════
+//  AUTH
+// ══════════════════════════════════════════
+async function checkPassphrase() {
+  const val = document.getElementById('lock-input').value.trim();
+  const settings = await window.fb.getSettings();
+  if (val === settings.passphrase) {
+    const users = await window.fb.getUsers();
+    if (users.length === 0) {
+      document.getElementById('lock-error').textContent = 'No family members set up yet. Ask the admin to add you first.';
+      return;
+    }
+    showUserPicker(users);
+  } else {
+    document.getElementById('lock-error').textContent = 'Incorrect passphrase. Try again.';
+    document.getElementById('lock-input').value = '';
+  }
+}
+
+function showUserPicker(users) {
+  const box = document.querySelector('.lock-box');
+  box.innerHTML = `
+    <span class="lock-van">🚐</span>
+    <h1 class="lock-title" style="margin-bottom:0.3rem;">Who are you?</h1>
+    <p class="lock-sub" style="margin-bottom:1.5rem;">Select your name to continue</p>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:1rem;">
+      ${users.map((u,i) => `
+        <button onclick="selectUser(${i})" style="background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:10px;color:#fff;padding:14px 18px;text-align:left;cursor:pointer;font-family:'DM Sans',sans-serif;font-size:15px;display:flex;align-items:center;gap:12px;width:100%;">
+          <span style="width:34px;height:34px;border-radius:50%;background:${AVATARBG[i%6]};color:${AVATARTXT[i%6]};display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:500;flex-shrink:0;">${u.name.slice(0,2).toUpperCase()}</span>
+          <span>${u.name}</span>
+          ${u.role==='approver'?'<span style="font-size:11px;background:rgba(233,171,34,0.2);color:#E9AB22;padding:2px 8px;border-radius:10px;margin-left:auto;">Approver</span>':''}
+        </button>
+      `).join('')}
+    </div>
+    <button class="lock-admin-link" onclick="resetLockBox()">← Back</button>
+  `;
+  window._pickUsers = users;
+}
+
+function selectUser(idx) {
+  const users = window._pickUsers || [];
+  currentUser = users[idx];
+  document.getElementById('header-username').textContent = currentUser.name;
+  document.getElementById('req-name').value = currentUser.name;
+  if (currentUser.role === 'approver') {
+    document.getElementById('tab-approvals').style.display = '';
+  }
+  showScreen('screen-app');
+  const now = new Date();
+  calYear = now.getFullYear();
+  calMonth = now.getMonth();
+  startBookingsListener();
+}
+
+function logout() {
+  currentUser = null;
+  if (unsubscribeBookings) { unsubscribeBookings(); unsubscribeBookings = null; }
+  allBookings = [];
+  document.getElementById('tab-approvals').style.display = 'none';
+  resetLockBox();
+}
+
+async function checkAdminPassword() {
+  const val = document.getElementById('admin-pw-input').value.trim();
+  const settings = await window.fb.getSettings();
+  if (val === settings.adminPw) {
+    showScreen('screen-admin');
+    document.getElementById('admin-pw-input').value = '';
+    startBookingsListener();
+    renderAdminUsers();
+  } else {
+    document.getElementById('admin-login-error').textContent = 'Incorrect password.';
+    document.getElementById('admin-pw-input').value = '';
+  }
+}
+
+function adminLogout() {
+  if (unsubscribeBookings) { unsubscribeBookings(); unsubscribeBookings = null; }
+  allBookings = [];
+  showScreen('screen-lock');
+}
+
+// ══════════════════════════════════════════
+//  LIVE BOOKINGS LISTENER
+// ══════════════════════════════════════════
+function startBookingsListener() {
+  if (unsubscribeBookings) unsubscribeBookings();
+  const { bookingsCol, onSnapshot } = window.fb;
+  unsubscribeBookings = onSnapshot(bookingsCol, (snap) => {
+    allBookings = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    onBookingsUpdated();
+  });
+}
+
+function onBookingsUpdated() {
+  const activeScreen = document.querySelector('.screen.active')?.id;
+  if (activeScreen === 'screen-app') {
+    const activeTab = document.querySelector('.nav-tab.active')?.dataset?.tab;
+    renderCalendar();
+    renderUpcoming();
+    if (activeTab === 'bookings') renderMyBookings();
+    if (activeTab === 'approvals') renderApprovals();
+    updateApprovalsBadge();
+  }
+  if (activeScreen === 'screen-admin') {
+    const activeAdminTab = document.querySelector('.admin-tab.active')?.dataset?.tab;
+    if (activeAdminTab === 'all-bookings') renderAdminBookings();
+    updateApprovalsBadge();
+  }
+}
+
+// ══════════════════════════════════════════
+//  TAB MANAGEMENT
+// ══════════════════════════════════════════
+function switchTab(name, el) {
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('[id^="tab-content-"]').forEach(t => t.style.display = 'none');
+  el.classList.add('active');
+  document.getElementById('tab-content-' + name).style.display = '';
+  if (name === 'calendar') { renderCalendar(); renderUpcoming(); }
+  if (name === 'bookings') renderMyBookings();
+  if (name === 'approvals') renderApprovals();
+}
+
+function switchAdminTab(name, el) {
+  document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('[id^="admin-tab-"]').forEach(t => t.style.display = 'none');
+  el.classList.add('active');
+  el.dataset.tab = name;
+  document.getElementById('admin-tab-' + name).style.display = '';
+  if (name === 'all-bookings') renderAdminBookings();
+  if (name === 'users') renderAdminUsers();
+}
+
+// ══════════════════════════════════════════
+//  CALENDAR
+// ══════════════════════════════════════════
+function changeMonth(dir) {
+  calMonth += dir;
+  if (calMonth > 11) { calMonth = 0; calYear++; }
+  if (calMonth < 0)  { calMonth = 11; calYear--; }
+  renderCalendar();
+}
+
+function getBookedDays() {
+  const confirmed = new Set(), pending = new Set();
+  allBookings.forEach(b => {
+    if (b.status === 'denied') return;
+    const from = new Date(b.from + 'T00:00:00');
+    const to   = new Date(b.to   + 'T00:00:00');
+    for (let d = new Date(from); d <= to; d.setDate(d.getDate()+1)) {
+      const key = d.toISOString().slice(0,10);
+      if (b.status === 'confirmed') confirmed.add(key);
+      else pending.add(key);
+    }
+  });
+  return { confirmed, pending };
+}
+
+function renderCalendar() {
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  document.getElementById('cal-month-label').textContent = months[calMonth] + ' ' + calYear;
+  const { confirmed, pending } = getBookedDays();
+  const today = new Date().toISOString().slice(0,10);
+  const grid = document.getElementById('cal-grid');
+  const days = ['Mo','Tu','We','Th','Fr','Sa','Su'];
+  let html = days.map(d => `<div class="cal-day-label">${d}</div>`).join('');
+  let startDow = new Date(calYear, calMonth, 1).getDay();
+  startDow = startDow === 0 ? 6 : startDow - 1;
+  for (let i=0; i<startDow; i++) html += `<div class="cal-day"></div>`;
+  const daysInMonth = new Date(calYear, calMonth+1, 0).getDate();
+  for (let d=1; d<=daysInMonth; d++) {
+    const dateStr = `${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    let cls = 'cal-day';
+    if (confirmed.has(dateStr)) cls += ' confirmed';
+    else if (pending.has(dateStr)) cls += ' pending';
+    if (dateStr === today) cls += ' today';
+    html += `<div class="${cls}">${d}</div>`;
+  }
+  grid.innerHTML = html;
+}
+
+// ══════════════════════════════════════════
+//  BOOKING LISTS
+// ══════════════════════════════════════════
+function avatarHtml(name, idx) {
+  const i = (idx || 0) % 6;
+  return `<div class="avatar" style="background:${AVATARBG[i]};color:${AVATARTXT[i]};">${name.slice(0,2).toUpperCase()}</div>`;
+}
+
+function userIdx(name) {
+  const users = window._pickUsers || [];
+  const i = users.findIndex(u => u.name === name);
+  return i >= 0 ? i : Math.abs(name.charCodeAt(0)) % 6;
+}
+
+function formatDateRange(from, to) {
+  const opts = { day: 'numeric', month: 'short' };
+  const f = new Date(from + 'T00:00:00').toLocaleDateString('en-GB', opts);
+  const t = new Date(to   + 'T00:00:00').toLocaleDateString('en-GB', opts);
+  const nights = Math.round((new Date(to) - new Date(from)) / 86400000);
+  return `${f} – ${t} · ${nights} night${nights!==1?'s':''}`;
+}
+
+function renderUpcoming() {
+  const today = new Date().toISOString().slice(0,10);
+  const bookings = allBookings.filter(b => b.status !== 'denied' && b.to >= today);
+  bookings.sort((a,b) => a.from.localeCompare(b.from));
+  const el = document.getElementById('upcoming-list');
+  if (!bookings.length) { el.innerHTML = `<div class="empty-state"><div class="empty-icon">📅</div><div class="empty-text">No upcoming bookings</div></div>`; return; }
+  el.innerHTML = bookings.slice(0,6).map(b => {
+    const badge = b.status === 'confirmed'
+      ? `<span class="status-badge status-confirmed">Confirmed</span>`
+      : `<span class="status-badge status-pending">Pending</span>`;
+    return `<div class="booking-item">${avatarHtml(b.user, userIdx(b.user))}<div class="booking-info"><div class="booking-name">${b.user}</div><div class="booking-dates">${formatDateRange(b.from,b.to)}</div>${b.notes?`<div class="booking-note">${b.notes}</div>`:''}</div>${badge}</div>`;
+  }).join('');
+}
+
+function renderMyBookings() {
+  if (!currentUser) return;
+  const bookings = allBookings.filter(b => b.user === currentUser.name);
+  bookings.sort((a,b) => b.from.localeCompare(a.from));
+  const el = document.getElementById('my-bookings-list');
+  if (!bookings.length) { el.innerHTML = `<div class="empty-state"><div class="empty-icon">🏕</div><div class="empty-text">You haven't made any bookings yet</div></div>`; return; }
+  el.innerHTML = bookings.map(b => {
+    let badge;
+    if (b.status==='confirmed') badge=`<span class="status-badge status-confirmed">Confirmed</span>`;
+    else if (b.status==='denied') badge=`<span class="status-badge status-denied">Denied</span>`;
+    else badge=`<span class="status-badge status-pending">Pending</span>`;
+    const cancel = b.status==='pending' ? `<div class="approve-btns"><button class="btn-deny" onclick="cancelBooking('${b.id}')">Cancel request</button></div>` : '';
+    return `<div class="booking-item">${avatarHtml(b.user,userIdx(b.user))}<div class="booking-info"><div class="booking-name">${formatDateRange(b.from,b.to)}</div>${b.notes?`<div class="booking-note">${b.notes}</div>`:''}${cancel}</div>${badge}</div>`;
+  }).join('');
+}
+
+function updateApprovalsBadge() {
+  const pending = allBookings.filter(b => b.status === 'pending');
+  const badge = document.getElementById('approvals-badge');
+  if (badge) {
+    if (pending.length) { badge.textContent = pending.length; badge.style.display=''; }
+    else badge.style.display = 'none';
+  }
+}
+
+function renderApprovals() {
+  const pending = allBookings.filter(b => b.status === 'pending');
+  pending.sort((a,b) => a.from.localeCompare(b.from));
+  updateApprovalsBadge();
+  const el = document.getElementById('approvals-list');
+  if (!pending.length) { el.innerHTML = `<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-text">No pending requests</div></div>`; return; }
+  el.innerHTML = pending.map(b => `
+    <div class="booking-item">${avatarHtml(b.user,userIdx(b.user))}
+    <div class="booking-info"><div class="booking-name">${b.user}</div><div class="booking-dates">${formatDateRange(b.from,b.to)}</div>${b.notes?`<div class="booking-note">${b.notes}</div>`:''}
+    <div class="approve-btns">
+      <button class="btn-approve" onclick="approveBooking('${b.id}')">✓ Approve</button>
+      <button class="btn-deny" onclick="denyBooking('${b.id}')">✕ Deny</button>
+    </div></div>
+    <span class="status-badge status-pending">Pending</span></div>
+  `).join('');
+}
+
+// ══════════════════════════════════════════
+//  BOOKING ACTIONS
+// ══════════════════════════════════════════
+function checkConflict() {
+  const from = document.getElementById('req-from').value;
+  const to   = document.getElementById('req-to').value;
+  if (!from || !to) { document.getElementById('conflict-warn').style.display='none'; return; }
+  const hasConflict = allBookings.filter(b=>b.status==='confirmed').some(b => !(to < b.from || from > b.to));
+  document.getElementById('conflict-warn').style.display = hasConflict ? '' : 'none';
+}
+
+async function submitRequest() {
+  const from  = document.getElementById('req-from').value;
+  const to    = document.getElementById('req-to').value;
+  const notes = document.getElementById('req-notes').value.trim();
+  const err   = document.getElementById('req-error');
+  if (!from || !to) { err.textContent = 'Please select both dates.'; return; }
+  if (from > to)    { err.textContent = 'End date must be after start date.'; return; }
+  err.textContent = '';
+  const btn = document.getElementById('req-submit-btn');
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    await window.fb.addBooking({ user: currentUser.name, from, to, notes, status: 'pending' });
+    document.getElementById('req-from').value = '';
+    document.getElementById('req-to').value = '';
+    document.getElementById('req-notes').value = '';
+    document.getElementById('conflict-warn').style.display = 'none';
+    showToast('Booking request sent!');
+    switchTab('bookings', document.querySelectorAll('.nav-tab')[1]);
+    document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
+    document.querySelectorAll('.nav-tab')[1].classList.add('active');
+  } catch(e) {
+    err.textContent = 'Failed to send. Check your connection.';
+  }
+  btn.disabled = false; btn.textContent = 'Send booking request';
+}
+
+async function approveBooking(id) {
+  await window.fb.updateBooking(id, { status: 'confirmed' });
+  showToast('Booking approved ✓');
+}
+async function denyBooking(id) {
+  await window.fb.updateBooking(id, { status: 'denied' });
+  showToast('Booking denied');
+}
+async function cancelBooking(id) {
+  await window.fb.deleteBooking(id);
+  showToast('Request cancelled');
+}
+
+// ══════════════════════════════════════════
+//  ADMIN — USERS
+// ══════════════════════════════════════════
+async function renderAdminUsers() {
+  const users = await window.fb.getUsers();
+  window._pickUsers = users;
+  const el = document.getElementById('admin-users-list');
+  if (!users.length) { el.innerHTML = `<div class="empty-state"><div class="empty-text">No members yet. Add one below.</div></div>`; return; }
+  el.innerHTML = users.map((u,i) => `
+    <div class="user-row">
+      ${avatarHtml(u.name, i)}
+      <div class="user-info">
+        <div class="user-name">${u.name}</div>
+        <div class="user-role">${u.role==='approver'?'Approver — can approve bookings':'Member'}</div>
+      </div>
+      <button class="role-toggle ${u.role==='approver'?'role-approver':'role-member'}" onclick="toggleRole(${i})">${u.role==='approver'?'★ Approver':'Make approver'}</button>
+      <button class="btn-danger" onclick="removeUser(${i})">Remove</button>
+    </div>
+  `).join('');
+}
+
+async function addUser() {
+  const name = document.getElementById('new-user-name').value.trim();
+  const role = document.getElementById('new-user-role').value;
+  if (!name) { showToast('Enter a name'); return; }
+  const users = await window.fb.getUsers();
+  if (users.find(u => u.name.toLowerCase() === name.toLowerCase())) { showToast('Name already exists'); return; }
+  users.push({ name, role });
+  await window.fb.saveUsers(users);
+  document.getElementById('new-user-name').value = '';
+  await renderAdminUsers();
+  showToast(name + ' added!');
+}
+
+async function removeUser(idx) {
+  const users = await window.fb.getUsers();
+  if (!confirm(`Remove ${users[idx].name}?`)) return;
+  users.splice(idx, 1);
+  await window.fb.saveUsers(users);
+  await renderAdminUsers();
+  showToast('Member removed');
+}
+
+async function toggleRole(idx) {
+  const users = await window.fb.getUsers();
+  users[idx].role = users[idx].role === 'approver' ? 'member' : 'approver';
+  await window.fb.saveUsers(users);
+  await renderAdminUsers();
+  showToast('Role updated');
+}
+
+// ══════════════════════════════════════════
+//  ADMIN — ALL BOOKINGS
+// ══════════════════════════════════════════
+function renderAdminBookings() {
+  const bookings = [...allBookings].sort((a,b) => b.created - a.created);
+  const el = document.getElementById('admin-bookings-list');
+  if (!bookings.length) { el.innerHTML = `<div class="empty-state"><div class="empty-text">No bookings yet</div></div>`; return; }
+  el.innerHTML = bookings.map(b => {
+    let badge, btns='';
+    if (b.status==='confirmed') { badge=`<span class="status-badge status-confirmed">Confirmed</span>`; btns=`<button class="btn-deny" onclick="adminUpdateBooking('${b.id}','denied')">Revoke</button>`; }
+    else if (b.status==='denied') { badge=`<span class="status-badge status-denied">Denied</span>`; btns=`<button class="btn-approve" onclick="adminUpdateBooking('${b.id}','confirmed')">Approve</button>`; }
+    else { badge=`<span class="status-badge status-pending">Pending</span>`; btns=`<button class="btn-approve" onclick="adminUpdateBooking('${b.id}','confirmed')">Approve</button> <button class="btn-deny" onclick="adminUpdateBooking('${b.id}','denied')">Deny</button>`; }
+    return `<div class="booking-item">${avatarHtml(b.user,userIdx(b.user))}<div class="booking-info"><div class="booking-name">${b.user}</div><div class="booking-dates">${formatDateRange(b.from,b.to)}</div>${b.notes?`<div class="booking-note">${b.notes}</div>`:''}<div class="approve-btns">${btns}</div></div>${badge}</div>`;
+  }).join('');
+}
+
+async function adminUpdateBooking(id, status) {
+  await window.fb.updateBooking(id, { status });
+  showToast(status === 'confirmed' ? 'Approved' : 'Denied/revoked');
+}
+
+async function clearAllBookings() {
+  if (!confirm('Delete ALL bookings? This cannot be undone.')) return;
+  await Promise.all(allBookings.map(b => window.fb.deleteBooking(b.id)));
+  showToast('All bookings cleared');
+}
+
+// ══════════════════════════════════════════
+//  ADMIN — SETTINGS
+// ══════════════════════════════════════════
+async function savePassphrase() {
+  const val = document.getElementById('setting-passphrase').value.trim();
+  if (!val) { showToast('Enter a passphrase'); return; }
+  await window.fb.saveSettings({ passphrase: val });
+  document.getElementById('setting-passphrase').value = '';
+  showToast('Passphrase updated');
+}
+
+async function saveAdminPw() {
+  const val = document.getElementById('setting-adminpw').value.trim();
+  if (!val) { showToast('Enter a password'); return; }
+  await window.fb.saveSettings({ adminPw: val });
+  document.getElementById('setting-adminpw').value = '';
+  showToast('Admin password updated');
+}
+
+// ══════════════════════════════════════════
+//  TOAST
+// ══════════════════════════════════════════
+let toastTimer;
+function showToast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+// ── Keyboard shortcuts ──
+document.getElementById('lock-input').addEventListener('keydown', e => { if (e.key==='Enter') checkPassphrase(); });
+document.getElementById('admin-pw-input').addEventListener('keydown', e => { if (e.key==='Enter') checkAdminPassword(); });
+</script>
+</body>
+</html>
